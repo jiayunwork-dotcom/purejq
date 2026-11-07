@@ -1,10 +1,12 @@
 """purejq: a pure Python implementation of jq."""
 from __future__ import annotations
 
+import os
+
 from .compiler import Env, _names_ctx, collect_defined_names, compile_v
 from .encoder import encode, encode_pretty
 from .errors import Halt, JqError, JqParseError
-from .parser import parse
+from .modules import Loader
 from .prelude import prelude_env
 
 __version__ = "0.3.1"
@@ -17,15 +19,20 @@ class Program:
 
     def __init__(self, source):
         self.source = source
+        # Module search directories are fixed when the program is created:
+        # JQ_LIBRARY_PATH is a pathsep-separated list, like jq's.
+        library_path = os.environ.get("JQ_LIBRARY_PATH", "")
+        search_dirs = [d for d in library_path.split(os.pathsep) if d]
         # The parser caps structural nesting at MAX_DEPTH, which trips well
         # before any platform's stack limit, so deep input ("[[[[...") raises
         # a clean parse error. This catch is a backstop for the remaining deep
         # recursion (long flat pipe/operator chains compiled into a deep tree)
         # so a RecursionError never escapes; valid programs never trigger it.
         try:
-            ast = parse(source)
+            ast, exposed_names = Loader(search_dirs).build(source)
             prelude_env()  # built first so calls can be statically bound
-            with _names_ctx(frozenset(collect_defined_names(ast))):
+            names = frozenset(collect_defined_names(ast)) | exposed_names
+            with _names_ctx(names):
                 self._vfn = compile_v(ast)
         except RecursionError:
             raise JqParseError("program nests too deeply") from None

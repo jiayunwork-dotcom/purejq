@@ -106,7 +106,10 @@ AST, and common shapes skip generator machinery entirely.
 [expected_failures.txt](tests/conformance/expected_failures.txt); they fall
 into three buckets:
 
-- the **module system** (`import`/`include`) is not implemented yet
+- the **module system** supports `include`/`import` (with `JQ_LIBRARY_PATH`
+  search, namespaces and JSON data imports); `modulemeta`, the `module`
+  directive/metadata and `-L` are not implemented, and the upstream suite's
+  module fixture files are not vendored, so those cases still fail
 - **integers are exact** (arbitrary precision, like gojq) instead of rounding
   to doubles — deliberate
 - a few **error-message wordings** differ

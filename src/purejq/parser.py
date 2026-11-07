@@ -21,19 +21,22 @@ _LITERALS = {"true": True, "false": False, "null": None}
 MAX_DEPTH = 64
 
 
-def parse(source):
-    p = Parser(lex(source))
+def parse(source, library=False):
+    p = Parser(lex(source), library=library)
     return p.parse_program()
 
 
 class Parser:
-    def __init__(self, tokens):
+    def __init__(self, tokens, library=False):
         self.toks = tokens
         self.pos = 0
         # >0 while parsing a reduce/foreach source, whose trailing `as`
         # belongs to the construct itself rather than to a binding.
         self.no_as = 0
         self.depth = 0  # current parse_pipe recursion depth (bounded below)
+        # Library files (modules) end after their last `def`/directive without
+        # a trailing expression; a top-level program always needs one.
+        self.library = library
 
     # --- token helpers -------------------------------------------------
     def peek(self):
@@ -74,12 +77,51 @@ class Parser:
         try:
             if self.at("KW", "def"):
                 return self.parse_funcdef()
+            if self.at("KW", "include"):
+                return self.parse_include()
+            if self.at("KW", "import"):
+                return self.parse_import()
+            if self.library and self.at("EOF"):
+                # A module is a sequence of defs/directives with no body.
+                return ("empty",)
             left = self.parse_comma()
             if self.accept("OP", "|"):
                 return ("pipe", left, self.parse_pipe())
             return left
         finally:
             self.no_as = saved
+
+    def parse_module_path(self):
+        """The string argument of include/import must be a compile-time
+        constant; interpolations are a parse error (as in jq)."""
+        t = self.expect("STR")
+        parts = t[1]
+        for part in parts:
+            if not isinstance(part, str):
+                raise JqParseError("Import path must be constant")
+        return "".join(parts)
+
+    def parse_include(self):
+        self.expect("KW", "include")
+        path = self.parse_module_path()
+        self.expect("OP", ";")
+        rest = self.parse_pipe()
+        return ("include", path, rest)
+
+    def parse_import(self):
+        self.expect("KW", "import")
+        path = self.parse_module_path()
+        self.expect("KW", "as")
+        if self.at("VAR"):
+            # `import "file" as $d;` loads a JSON data file.
+            is_data = True
+            alias = self.next()[1]
+        else:
+            is_data = False
+            alias = self.expect("IDENT")[1]
+        self.expect("OP", ";")
+        rest = self.parse_pipe()
+        return ("import", path, is_data, alias, rest)
 
     def parse_funcdef(self):
         self.expect("KW", "def")

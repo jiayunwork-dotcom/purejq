@@ -686,6 +686,31 @@ def _p_funcdef(ast):
     return pfn
 
 
+def _v_use(ast):
+    """A resolved include/import: run rest with funcs/vars layered in."""
+    _, funcs, variables, rest = ast
+    rest_v = compile_v(rest)
+    funcs = funcs or None
+    variables = variables or None
+
+    def vfn(input, env):
+        env2 = Env(parent=env, funcs=funcs, vars=variables)
+        return rest_v(input, env2)
+    return vfn
+
+
+def _p_use(ast):
+    _, funcs, variables, rest = ast
+    rest_p = compile_p(rest)
+    funcs = funcs or None
+    variables = variables or None
+
+    def pfn(input, path, env):
+        env2 = Env(parent=env, funcs=funcs, vars=variables)
+        return rest_p(input, path, env2)
+    return pfn
+
+
 def _call_funcval(fv, arg_closures, input, env, mode, path=None):
     dollar = [(i, p[1:]) for i, p in enumerate(fv.params) if p.startswith("$")]
     funcs = {}
@@ -1371,6 +1396,7 @@ _V = {
     "label": _v_label,
     "break": _v_break,
     "assign": _v_assign,
+    "use": _v_use,
 }
 
 _P = {
@@ -1389,4 +1415,5 @@ _P = {
     "as": _p_as,
     "label": _p_label,
     "break": _p_break,
+    "use": _p_use,
 }
